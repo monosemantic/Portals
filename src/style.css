@@ -1,0 +1,29 @@
+:root {
+  color-scheme: dark;
+  --bg: #000000;
+  --panel: rgba(12, 14, 20, 0.8);
+  --fg: #d8e0ea;
+  --accent: #3ddc97;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  font: 12px system-ui, sans-serif;
+  color: var(--fg);
+}
+
+canvas { display: block; touch-action: none; }
+
+#hud {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-radius: 8px;
+  line-height: 1.6;
+}
+#hud b { color: var(--accent); }
