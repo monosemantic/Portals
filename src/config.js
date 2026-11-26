@@ -16,6 +16,12 @@ export const PORTAL_H = 3.2;       // Doorway height
 // Pushed 1 cm in front of the wall plane to eliminate z-fighting
 export const PORTAL_WALL_OFFSET = 0.01;
 
+// How far the portal surface box reaches behind the doorway plane (into the wall opening).
+// Must exceed the eye-to-near-plane-corner distance (about 0.09 for CAMERA.near = 0.05 at 16:9)
+// so the near plane can never clip through the whole surface. Keep it well below the 0.3 gap
+// to the red decoy slabs behind the walls.
+export const PORTAL_DEPTH = 0.15;
+
 // Rendering and recursion settings
 export const DEFAULT_DEPTH = 3;    // Initial recursion depth
 export const MAX_LEVELS = 5;       // Maximum recursion depth supported by hotkeys (1-5)
@@ -46,11 +52,10 @@ export const PLAYER = {
   pitchLimit: 1.4,     // Maximum vertical look angle in radians (~80 degrees)
   radius: 0.3,         // Player collision radius kept from walls
 
-  // Buffer zone around portal openings where wall collision is lifted.
-  // Negative margin keeps the collision-free zone strictly INSIDE the teleportable
-  // opening (width / 2), so the player can never slip into the wall beside the frame.
-  doorwayMargin: -0.1, // Horizontal clearance relative to half the portal width
-  doorwayDepth: 0.7,   // Distance from wall plane where wall collision is disabled
+  // Walkable half-width of a portal opening is width / 2 + doorwayMargin.
+  // Negative keeps the player strictly INSIDE the teleportable opening, so every
+  // crossing of the portal plane is guaranteed to hit the doorway and teleport.
+  doorwayMargin: -0.1,
 };
 
 // Maximum delta time per frame to prevent simulation jumps on tab switch
@@ -61,12 +66,12 @@ export const DEFAULT_CHAMBER = 0;
 
 // Bird's-Eye debug view (toggle with V)
 export const BIRDS_EYE = {
-  position: [14, 22, 16],  // Initial overview camera position
-  target: [0, 1, 0],       // Point the overview camera orbits around / looks at
+  position: [0, 30, 22],   // Initial overview camera position (high above the South wall)
+  target: [0, 0, -2],      // Point the overview camera orbits around / looks at
   fov: 50,
   orbitSpeed: 1.2,         // Q / E orbit speed in radians per second
   minZoom: 0.5,            // Mouse-wheel zoom limits (scale of the initial distance)
   maxZoom: 1.8,
-  frustumFar: 16,          // Far distance of the drawn frustum helpers (keeps wireframes readable)
+  frustumFar: 8,           // How far the drawn frustums reach into the visible room
   insetWidth: 0.28,        // First-person inset width as a fraction of the screen width
 };

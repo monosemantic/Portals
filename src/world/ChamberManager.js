@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CHAMBERS } from './chambers.js';
-import { clampToRoom, clampToDivider } from './room.js';
+import { addWalls, clampToRoom, clampToDivider } from './room.js';
 import { DIVIDER_HALF_THICKNESS } from './props.js';
 
 /**
@@ -8,8 +8,8 @@ import { DIVIDER_HALF_THICKNESS } from './props.js';
  *
  * Loading a chamber:
  * 1. Removes the previous chamber's group and frees its GPU resources.
- * 2. Builds the new chamber's props and lights into a fresh group.
- * 3. Re-places the existing portal pair (portals and their render targets are reused).
+ * 2. Re-places the existing portal pair (portals and their render targets are reused).
+ * 3. Builds the walls (with openings behind the portals), props, and lights into a fresh group.
  *
  * The player pose is NOT touched here; callers apply `chamber.spawn` themselves,
  * which keeps this class independent of the player controller.
@@ -49,12 +49,13 @@ export class ChamberManager {
     const chamber = CHAMBERS[index];
     this.index = index;
 
+    chamber.portals.forEach(({ x, z, rotY }, i) => this.portals[i].place(x, z, rotY));
+
     this.group = new THREE.Group();
     this.group.name = 'chamber:' + chamber.name;
+    addWalls(this.group, this.portals);
     this._update = chamber.build(this.group) || null;
     this.scene.add(this.group);
-
-    chamber.portals.forEach(({ x, z, rotY }, i) => this.portals[i].place(x, z, rotY));
     return chamber;
   }
 
@@ -77,7 +78,7 @@ export class ChamberManager {
    * plus the glass divider when the chamber has one.
    */
   constrain(position, previous) {
-    clampToRoom(position, this.portals);
+    clampToRoom(position, previous, this.portals);
     if (this.current.divider) {
       clampToDivider(position, previous, DIVIDER_HALF_THICKNESS);
     }

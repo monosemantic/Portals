@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PORTAL_W, PORTAL_H } from '../config.js';
+import { PORTAL_W, PORTAL_H, PORTAL_DEPTH } from '../config.js';
 import { portalVertexShader, portalFragmentShader } from './portalShader.js';
 
 /**
@@ -23,6 +23,36 @@ const _scratchB = new THREE.Vector3();
 
 const FRAME_THICKNESS = 0.15; // Visual border thickness for the portal doorway
 
+/**
+ * Builds the portal surface as an open-bottomed box: the doorway quad at local z = 0
+ * plus side, top, and back faces extending `depth` units behind it (into the wall opening).
+ *
+ * Why a box instead of a flat quad: when the camera is closer to the portal than its
+ * near-plane distance, the GPU clips the front quad and the player would briefly see
+ * the wall behind it. Because the portal shader samples in SCREEN space, every face of
+ * the box shows exactly the same image, so the faces behind the front quad seamlessly
+ * take over. There is no bottom face, which would z-fight with the floor.
+ */
+function createPortalSurfaceGeometry(width, height, depth) {
+  const x = width / 2;
+  const z = -depth;
+  const positions = [
+    -x, 0, 0, x, 0, 0, x, height, 0, -x, height, 0, // 0-3: front (doorway plane)
+    -x, 0, z, x, 0, z, x, height, z, -x, height, z, // 4-7: back
+  ];
+  const quads = [
+    [0, 1, 2, 3], // front
+    [5, 4, 7, 6], // back
+    [4, 0, 3, 7], // left
+    [1, 5, 6, 2], // right
+    [3, 2, 6, 7], // top
+  ];
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(quads.flatMap(([a, b, c, d]) => [a, b, c, a, c, d]));
+  return geometry;
+}
+
 export class Portal {
   /**
    * Creates a new portal entity.
@@ -44,10 +74,13 @@ export class Portal {
     // Root Three.js group for this portal's visual and collision components
     this.group = new THREE.Group();
 
-    // The portal surface shader: samples the virtual camera's render target in screen space
+    // The portal surface shader: samples the virtual camera's render target in screen space.
+    // Double-sided so the inner faces of the surface box render too; whether the portal
+    // is drawn at all is decided per pass by PortalRenderer (front-facing + frustum check).
     this.material = new THREE.ShaderMaterial({
       vertexShader: portalVertexShader,
       fragmentShader: portalFragmentShader,
+      side: THREE.DoubleSide,
       uniforms: {
         map: { value: null },                    // Injected every frame by PortalRenderer
         uRes: { value: new THREE.Vector2(1, 1) },// Screen drawing buffer resolution
@@ -58,10 +91,8 @@ export class Portal {
       },
     });
 
-    // The portal surface mesh (single-sided plane; invisible from behind)
-    this.surface = new THREE.Mesh(new THREE.PlaneGeometry(width, height), this.material);
-    // Align surface so its bottom sits on the floor (Y = 0)
-    this.surface.position.y = height / 2;
+    // The portal surface mesh (doorway quad + shallow box behind it, bottom on the floor)
+    this.surface = new THREE.Mesh(createPortalSurfaceGeometry(width, height, PORTAL_DEPTH), this.material);
     this.group.add(this.surface);
 
     // Build the visual border frame
@@ -219,16 +250,5 @@ export class Portal {
     const withinVerticalBounds = hitY > 0 && hitY < this.height;
 
     return withinHorizontalBounds && withinVerticalBounds;
-  }
-
-  /**
-   * Checks if a point is within the doorway clearance zone.
-   * Used to temporarily bypass room wall collision so the player can pass through smoothly.
-   */
-  isInDoorway(worldPoint, marginX, depth) {
-    const local = this.toLocal(_scratchA, worldPoint);
-    const withinWidth = Math.abs(local.x) < this.width / 2 + marginX;
-    const withinDepth = Math.abs(local.z) < depth;
-    return withinWidth && withinDepth;
   }
 }

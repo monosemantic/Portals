@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { OBLIQUE_BIAS } from '../config.js';
+import { OBLIQUE_BIAS, CAMERA } from '../config.js';
 
 /**
  * Oblique Near-Plane Clipping (Eric Lengyel's Algorithm, 2004).
@@ -31,7 +31,8 @@ const GRAZING_EPSILON = 1e-4;
  * @param {Portal} destinationPortal - The portal the virtual camera looks out from
  * @param {number} bias - World-space distance the clip plane is pushed behind the portal
  *                        (prevents self-clipping of geometry exactly at the threshold)
- * @returns {boolean} False if the plane was too close to edge-on and the matrix was left untouched
+ * @returns {boolean} False if the matrix was left untouched (camera too close to the plane,
+ *                    or plane too close to edge-on)
  */
 export function applyObliqueNearPlane(camera, destinationPortal, bias = OBLIQUE_BIAS) {
   // 1. Define the destination portal's plane in world space (normal pointing out, coplanar with origin)
@@ -54,6 +55,13 @@ export function applyObliqueNearPlane(camera, destinationPortal, bias = OBLIQUE_
     clipPlaneWorld.normal.z,
     clipPlaneWorld.constant
   );
+
+  // The virtual camera must sit BEHIND the clip plane (w = signed distance of the eye < 0).
+  // When it is within one near-plane distance of the plane, the regular near plane already
+  // clips everything between the camera and the portal, while Lengyel's matrix degenerates
+  // (eye on or past the plane -> broken depth). This happens on the frames right before
+  // the player steps through a portal, so keep the standard projection there.
+  if (clipPlaneView.w > -CAMERA.near) return false;
 
   // In Three.js, projectionMatrix.elements is stored in column-major order:
   // e[0]=M[0][0], e[4]=M[0][1], e[8]=M[0][2],  e[12]=M[0][3]

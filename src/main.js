@@ -120,8 +120,10 @@ function updateHud() {
 function animationFrame() {
   requestAnimationFrame(animationFrame);
 
-  // Cap delta time to prevent physics anomalies if the user leaves the tab
-  const dt = Math.min(clock.getDelta(), MAX_DT);
+  // Cap delta time for the simulation to prevent jumps if the user leaves the tab
+  // (the FPS counter below uses the real frame time)
+  const frameTime = clock.getDelta();
+  const dt = Math.min(frameTime, MAX_DT);
   elapsed += dt;
 
   // Process player movement & portal teleportation
@@ -141,7 +143,7 @@ function animationFrame() {
 
   // Calculate FPS
   fpsFrames++;
-  fpsTime += dt;
+  fpsTime += frameTime;
   if (fpsTime > 0.5) {
     fps = Math.round(fpsFrames / fpsTime);
     fpsFrames = 0;

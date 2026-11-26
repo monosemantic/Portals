@@ -14,11 +14,12 @@
  */
 
 export const portalVertexShader = `
-  // Quad UVs (0..1 across the doorway), used only for the animated energy rim
-  varying vec2 vUv;
+  // Local doorway position (x across the width, y up from the floor), used for the energy rim.
+  // Every face of the surface box maps to the same doorway rectangle, so the rim matches.
+  varying vec2 vLocal;
 
   void main() {
-    vUv = uv;
+    vLocal = position.xy;
     // Standard projection: transforms the portal quad vertex from local space
     // to screen clip space.
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -45,16 +46,15 @@ export const portalFragmentShader = `
   // Doorway size in world units, so the rim has the same thickness on every side
   uniform vec2 uSize;
 
-  varying vec2 vUv;
+  varying vec2 vLocal;
 
   // Rim thickness in world units
   const float RIM_WIDTH = 0.12;
 
   // Soft glow along the left, right, and top edges (the bottom edge touches the floor).
   float energyRim() {
-    vec2 fromEdge = min(vUv, 1.0 - vUv) * uSize;  // distance to the nearest edge per axis
-    float sideDist = fromEdge.x;
-    float topDist = (1.0 - vUv.y) * uSize.y;
+    float sideDist = 0.5 * uSize.x - abs(vLocal.x);
+    float topDist = uSize.y - vLocal.y;
     float rim = 1.0 - smoothstep(0.0, RIM_WIDTH, min(sideDist, topDist));
     float pulse = 0.65 + 0.35 * sin(uTime * 3.0);
     return rim * pulse;

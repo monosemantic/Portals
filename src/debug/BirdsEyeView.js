@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BIRDS_EYE, CAMERA, PLAYER } from '../config.js';
+import { FrustumGizmo } from './FrustumGizmo.js';
 
 /**
  * Bird's-Eye debug view (toggle with V).
@@ -8,8 +9,8 @@ import { BIRDS_EYE, CAMERA, PLAYER } from '../config.js';
  * - A marker for the player's position and facing direction.
  * - The player camera frustum (white).
  * - The level-1 virtual camera frustum of every portal the player can currently see,
- *   tinted with that portal's color. With oblique clipping ON, its near plane
- *   visibly snaps onto the exit portal's wall.
+ *   tinted with that portal's color. With oblique clipping ON, it is cut by the exit
+ *   portal's plane: the clipped part turns faint and the cut shows as a filled patch.
  * - An inset with the player's actual first-person view (portals fully rendered).
  *
  * WASD and mouse-look keep driving the player, so the frustums move live.
@@ -18,7 +19,7 @@ import { BIRDS_EYE, CAMERA, PLAYER } from '../config.js';
  * Pass order per frame:
  * 1. PortalRenderer runs normally (debug objects hidden, so they never leak into
  *    portal textures) and writes the player's final view into the inset target.
- * 2. Debug cameras and helpers are synced to this frame's player/virtual cameras.
+ * 2. The player marker and frustum gizmos are synced to this frame's cameras.
  * 3. The scene is drawn from the overview camera to the screen.
  * 4. The inset is composited into the bottom-right corner.
  */
@@ -26,11 +27,14 @@ import { BIRDS_EYE, CAMERA, PLAYER } from '../config.js';
 const INSET_MARGIN = 12;       // CSS pixels from the screen corner
 const INSET_BORDER = 2;        // CSS pixels
 const INSET_BORDER_COLOR = new THREE.Color(0x3ddc97);
-const PLAYER_FRUSTUM_COLOR = new THREE.Color(0xffffff);
+const PLAYER_FRUSTUM_COLOR = 0xffffff;
 
 // Reusable scratch objects
 const _size = new THREE.Vector2();
 const _savedClearColor = new THREE.Color();
+const _virtualMatrix = new THREE.Matrix4();
+const _virtualEye = new THREE.Vector3();
+const _clipPlane = new THREE.Plane();
 
 export class BirdsEyeView {
   /**
@@ -60,7 +64,7 @@ export class BirdsEyeView {
 
     this.avatar = createAvatar();
     this.debugGroup.add(this.avatar);
-    this._setupFrustumHelpers();
+    this._setupFrustumGizmos();
     this._setupInset();
 
     renderer.domElement.addEventListener('wheel', (event) => {
@@ -99,7 +103,7 @@ export class BirdsEyeView {
 
     // 2. Sync debug geometry to this frame's cameras
     this._syncAvatar();
-    this._syncFrustumHelpers();
+    this._syncFrustumGizmos();
 
     // 3. Overview pass: portals shown as flat tinted panes (their textures are
     //    screen-space for the PLAYER camera and would look scrambled from here)
@@ -164,45 +168,40 @@ export class BirdsEyeView {
     this.avatar.rotation.y = this.player.yaw;
   }
 
-  _setupFrustumHelpers() {
-    // Proxy of the player camera with a short far plane, so the wireframe stays
-    // inside the room instead of shooting 100 units away. Its projection is also
-    // the base projection for the virtual camera proxies below.
-    this.playerProxy = new THREE.PerspectiveCamera(CAMERA.fov, 1, CAMERA.near, BIRDS_EYE.frustumFar);
-    this.playerHelper = createFrustumHelper(this.playerProxy, PLAYER_FRUSTUM_COLOR);
-    this.debugGroup.add(this.playerHelper);
+  _setupFrustumGizmos() {
+    this.playerFrustum = new FrustumGizmo(PLAYER_FRUSTUM_COLOR);
+    this.debugGroup.add(this.playerFrustum.object);
 
-    // One level-1 virtual camera proxy per portal
-    this.virtualProxies = this.portals.map(portal => {
-      const camera = new THREE.PerspectiveCamera(CAMERA.fov, 1, CAMERA.near, BIRDS_EYE.frustumFar);
-      const helper = createFrustumHelper(camera, portal.material.uniforms.uTint.value);
-      this.debugGroup.add(helper);
-      return { portal, camera, helper };
+    // One level-1 virtual camera frustum per portal, in that portal's color
+    this.virtualFrustums = this.portals.map(portal => {
+      const gizmo = new FrustumGizmo(portal.material.uniforms.uTint.value);
+      this.debugGroup.add(gizmo.object);
+      return { portal, gizmo };
     });
   }
 
-  _syncFrustumHelpers() {
+  _syncFrustumGizmos() {
     const playerCam = this.player.camera;
-    const proxy = this.playerProxy;
+    const far = BIRDS_EYE.frustumFar;
+    this.playerFrustum.update(playerCam.matrixWorld, CAMERA.fov, playerCam.aspect, far);
 
-    if (proxy.aspect !== playerCam.aspect) {
-      proxy.aspect = playerCam.aspect;
-      proxy.updateProjectionMatrix();
-    }
-    // Copy in place: CameraHelper holds a reference to camera.matrixWorld
-    proxy.matrixWorld.copy(playerCam.matrixWorld);
-    proxy.matrixWorldInverse.copy(playerCam.matrixWorldInverse);
-    this.playerHelper.update();
-
-    // Rebuild each virtual camera exactly like PortalRenderer does for level 1
-    // (same mapping matrix, same oblique near plane, same refreshed inverse)
-    for (const { portal, camera, helper } of this.virtualProxies) {
+    for (const { portal, gizmo } of this.virtualFrustums) {
       const rendered = this.portalRenderer.visibleFromRoot.has(portal);
-      helper.visible = rendered;
+      gizmo.object.visible = rendered;
       if (!rendered) continue;
 
-      this.portalRenderer.placeVirtualCamera(camera, proxy, portal, proxy.projectionMatrix);
-      helper.update();
+      // Same mapping PortalRenderer uses to place the level-1 virtual camera
+      portal.mapMatrix(_virtualMatrix, playerCam.matrixWorld);
+
+      // The virtual camera starts behind the exit wall, so extend its frustum by its
+      // distance to the exit plane to reach equally far into the visible room
+      const exit = portal.link;
+      _clipPlane.setFromNormalAndCoplanarPoint(exit.normal, exit.origin);
+      _virtualEye.setFromMatrixPosition(_virtualMatrix);
+      const behindExit = Math.max(0, -_clipPlane.distanceToPoint(_virtualEye));
+
+      const clipPlane = this.portalRenderer.obliqueEnabled ? _clipPlane : null;
+      gizmo.update(_virtualMatrix, CAMERA.fov, playerCam.aspect, far + behindExit, clipPlane);
     }
   }
 
@@ -259,27 +258,6 @@ export class BirdsEyeView {
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, screen.x, screen.y);
   }
-}
-
-/**
- * Creates a CameraHelper drawn in a single color, always on top of the scene.
- * (r128's CameraHelper has hard-coded per-part colors and no setColors().)
- */
-function createFrustumHelper(camera, color) {
-  const helper = new THREE.CameraHelper(camera);
-
-  const colors = helper.geometry.getAttribute('color');
-  for (let i = 0; i < colors.count; i++) {
-    colors.setXYZ(i, color.r, color.g, color.b);
-  }
-  colors.needsUpdate = true;
-
-  helper.material.depthTest = false;
-  helper.material.transparent = true;
-  helper.renderOrder = 999;
-  // Vertex positions change every frame, so the cached bounding sphere would go stale
-  helper.frustumCulled = false;
-  return helper;
 }
 
 /**

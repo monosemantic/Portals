@@ -84,17 +84,6 @@ export class PortalRenderer {
   }
 
   /**
-   * Releases GPU memory for a portal when it is removed from the game.
-   */
-  forget(portal) {
-    const list = this.targets.get(portal);
-    if (list) {
-      list.forEach(rt => rt && rt.dispose());
-    }
-    this.targets.delete(portal);
-  }
-
-  /**
    * Checks if the WebGL drawing buffer size has changed (e.g. window resized),
    * and resizes all off-screen render targets to match.
    */
@@ -171,15 +160,8 @@ export class PortalRenderer {
   /**
    * Positions the virtual camera to view the world from the destination portal,
    * matching the relative angle and perspective of the incoming camera.
-   *
-   * Public so debug views can reproduce the exact virtual camera of a pass.
-   *
-   * @param {THREE.PerspectiveCamera} virtualCam - Camera to place (modified in place)
-   * @param {THREE.Camera} sourceCam - Camera looking into `portal`
-   * @param {Portal} portal - Entrance portal
-   * @param {THREE.Matrix4} baseProjection - Unmodified projection to start from
    */
-  placeVirtualCamera(virtualCam, sourceCam, portal, baseProjection = this.rootCamera.projectionMatrix) {
+  _placeVirtualCamera(virtualCam, sourceCam, portal) {
     // Transform camera world matrix through the portal pair
     portal.mapMatrix(virtualCam.matrixWorld, sourceCam.matrixWorld);
 
@@ -188,16 +170,12 @@ export class PortalRenderer {
     virtualCam.updateMatrixWorld(true);
 
     // Always start with an unmodified copy of the main projection matrix
-    virtualCam.projectionMatrix.copy(baseProjection);
+    virtualCam.projectionMatrix.copy(this.rootCamera.projectionMatrix);
 
     // Tilt the near clipping plane to match the exit portal plane
     if (this.obliqueEnabled) {
       applyObliqueNearPlane(virtualCam, portal.link);
     }
-
-    // The projection was edited directly, so refresh its cached inverse
-    // (CameraHelper and unproject() read projectionMatrixInverse, not projectionMatrix)
-    virtualCam.projectionMatrixInverse.copy(virtualCam.projectionMatrix).invert();
   }
 
   /**
@@ -228,7 +206,7 @@ export class PortalRenderer {
 
       for (const portal of visiblePortals) {
         // Place virtual camera at the linked exit portal
-        this.placeVirtualCamera(virtualCam, cam, portal);
+        this._placeVirtualCamera(virtualCam, cam, portal);
 
         // Get dedicated render target for this portal at this level
         const rt = this._getRenderTarget(portal, level);
