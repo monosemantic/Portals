@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEFAULT_DEPTH } from '../config.js';
+import { DEFAULT_DEPTH, PORTAL_MSAA_SAMPLES } from '../config.js';
 import { applyObliqueNearPlane } from './obliqueClipping.js';
 
 /**
@@ -18,6 +18,10 @@ import { applyObliqueNearPlane } from './obliqueClipping.js';
  * 4. Render the current scene with the camera into the target buffer (or screen).
  *
  * At the recursion depth limit, portals render a subtle flat tint rather than recursing further.
+ *
+ * Self-recursion guard: a virtual camera sits just behind its exit portal, so that
+ * portal is excluded from the child pass (floating-point noise could otherwise make
+ * it look "in front" and render a view of itself).
  */
 
 // Reusable scratch objects for frustum culling to prevent per-frame allocations
@@ -52,6 +56,12 @@ export class PortalRenderer {
 
     // Reference to the main player camera of the current frame
     this.rootCamera = null;
+
+    // Portals that were visible from the root camera last frame (read by debug views)
+    this.visibleFromRoot = new Set();
+
+    // Multisampled targets give antialiased portal interiors, but require WebGL2
+    this._useMsaa = PORTAL_MSAA_SAMPLES > 0 && renderer.capabilities.isWebGL2;
   }
 
   /**
@@ -59,16 +69,18 @@ export class PortalRenderer {
    * Renders the complete scene (including all recursive portal views) to the screen.
    *
    * @param {THREE.PerspectiveCamera} camera - The player's main camera
+   * @param {THREE.WebGLRenderTarget|null} target - Final destination (null = screen).
+   *        Must match the drawing buffer size, since portals sample in screen space.
    */
-  render(camera) {
+  render(camera, target = null) {
     this.rootCamera = camera;
     this.passes = 0;
 
     // Ensure our offscreen render targets match current screen/canvas resolution
     this._syncRenderTargetSizes();
 
-    // Begin recursion at level 0, rendering directly to the screen (target = null)
-    this._renderView(camera, 0, null);
+    // Begin recursion at level 0, rendering to the screen (or the requested target)
+    this._renderView(camera, 0, target);
   }
 
   /**
@@ -109,9 +121,21 @@ export class PortalRenderer {
       this.targets.set(portal, levelList);
     }
     if (!levelList[level]) {
-      levelList[level] = new THREE.WebGLRenderTarget(this.size.x, this.size.y);
+      levelList[level] = this._createRenderTarget();
     }
     return levelList[level];
+  }
+
+  /**
+   * Allocates one portal render target at the current drawing buffer size.
+   */
+  _createRenderTarget() {
+    if (this._useMsaa) {
+      const rt = new THREE.WebGLMultisampleRenderTarget(this.size.x, this.size.y);
+      rt.samples = PORTAL_MSAA_SAMPLES;
+      return rt;
+    }
+    return new THREE.WebGLRenderTarget(this.size.x, this.size.y);
   }
 
   /**
@@ -147,8 +171,15 @@ export class PortalRenderer {
   /**
    * Positions the virtual camera to view the world from the destination portal,
    * matching the relative angle and perspective of the incoming camera.
+   *
+   * Public so debug views can reproduce the exact virtual camera of a pass.
+   *
+   * @param {THREE.PerspectiveCamera} virtualCam - Camera to place (modified in place)
+   * @param {THREE.Camera} sourceCam - Camera looking into `portal`
+   * @param {Portal} portal - Entrance portal
+   * @param {THREE.Matrix4} baseProjection - Unmodified projection to start from
    */
-  _placeVirtualCamera(virtualCam, sourceCam, portal) {
+  placeVirtualCamera(virtualCam, sourceCam, portal, baseProjection = this.rootCamera.projectionMatrix) {
     // Transform camera world matrix through the portal pair
     portal.mapMatrix(virtualCam.matrixWorld, sourceCam.matrixWorld);
 
@@ -157,12 +188,16 @@ export class PortalRenderer {
     virtualCam.updateMatrixWorld(true);
 
     // Always start with an unmodified copy of the main projection matrix
-    virtualCam.projectionMatrix.copy(this.rootCamera.projectionMatrix);
+    virtualCam.projectionMatrix.copy(baseProjection);
 
     // Tilt the near clipping plane to match the exit portal plane
     if (this.obliqueEnabled) {
       applyObliqueNearPlane(virtualCam, portal.link);
     }
+
+    // The projection was edited directly, so refresh its cached inverse
+    // (CameraHelper and unproject() read projectionMatrixInverse, not projectionMatrix)
+    virtualCam.projectionMatrixInverse.copy(virtualCam.projectionMatrix).invert();
   }
 
   /**
@@ -171,14 +206,19 @@ export class PortalRenderer {
    * @param {THREE.Camera} cam - Camera rendering this view
    * @param {number} level - Current recursion level (0 = main player view)
    * @param {THREE.WebGLRenderTarget|null} target - Destination render target (null for screen)
+   * @param {Portal|null} excludePortal - Portal this camera looks out of (never rendered in this pass)
    */
-  _renderView(cam, level, target) {
+  _renderView(cam, level, target, excludePortal = null) {
     // 1. Determine which portals are visible from this camera
     const visiblePortals = new Set();
     for (const portal of this.portals) {
+      if (portal === excludePortal) continue;
       if (this._isPortalVisible(portal, cam)) {
         visiblePortals.add(portal);
       }
+    }
+    if (level === 0) {
+      this.visibleFromRoot = visiblePortals;
     }
 
     // 2. Recursively render deeper portal views (if below maximum depth limit)
@@ -188,13 +228,14 @@ export class PortalRenderer {
 
       for (const portal of visiblePortals) {
         // Place virtual camera at the linked exit portal
-        this._placeVirtualCamera(virtualCam, cam, portal);
+        this.placeVirtualCamera(virtualCam, cam, portal);
 
         // Get dedicated render target for this portal at this level
         const rt = this._getRenderTarget(portal, level);
 
         // Recurse down to render what the virtual camera sees
-        this._renderView(virtualCam, level + 1, rt);
+        // (the exit portal is excluded so the virtual camera never sees through itself)
+        this._renderView(virtualCam, level + 1, rt, portal.link);
 
         // Store rendered texture to display on this portal's surface
         portalTextures.set(portal, rt.texture);

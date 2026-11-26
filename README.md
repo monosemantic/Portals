@@ -30,6 +30,10 @@ Then open `http://localhost:8000` in your browser.
 | **Mouse Click + Drag** | Look around (FPS camera) |
 | **O** | Toggle **Oblique Near-Plane Clipping** (watch the red occluders behind walls!) |
 | **1 – 5** | Change **Portal Recursion Depth** (1 = single view, 5 = deep reflections) |
+| **C** / HUD buttons | Cycle the 3 showcase **chambers** (Oblique Lab, Infinite Mirror Hallway, Split Glass) |
+| **V** | Toggle the **Bird's-Eye Debug View** (player + virtual camera frustums, first-person inset) |
+| **Q / E**, Mouse Wheel | Orbit / zoom the Bird's-Eye camera (WASD and drag still drive the player) |
+| `?chamber=1..3` | URL parameter to start in a specific chamber (e.g. `http://localhost:8000/?chamber=3`) |
 | **F12 / Console** | Inspect `window.game` (scene, portals, player, renderer) |
 
 ---
@@ -49,9 +53,14 @@ src/
 │   ├── Player.js            # First-person camera, kinematics & seamless teleportation
 │   └── Input.js             # Keyboard and mouse pointer event handling
 ├── world/
-│   └── room.js              # Color-coded room geometry, animated props & collision
+│   ├── room.js              # Color-coded room shell, wall & glass-divider collision
+│   ├── props.js             # Reusable prop/light builders (knot, cubes, decoys, glass)
+│   ├── chambers.js          # The 3 showcase chamber presets (data + build functions)
+│   └── ChamberManager.js    # Chamber loading/disposal, portal placement, collision
+├── debug/
+│   └── BirdsEyeView.js      # Overview camera, frustum helpers & first-person inset
 └── ui/
-    └── Hud.js               # Performance & diagnostic HUD overlay
+    └── Hud.js               # Diagnostic HUD overlay & chamber buttons
 ```
 
 ---

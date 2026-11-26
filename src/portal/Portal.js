@@ -52,7 +52,9 @@ export class Portal {
         map: { value: null },                    // Injected every frame by PortalRenderer
         uRes: { value: new THREE.Vector2(1, 1) },// Screen drawing buffer resolution
         uFlat: { value: 0 },                     // 1.0 when recursion depth limit is reached
-        uTint: { value: new THREE.Color(color) } // Frame color accent
+        uTint: { value: new THREE.Color(color) },// Frame color accent
+        uTime: { value: 0 },                     // Seconds elapsed (animated energy rim)
+        uSize: { value: new THREE.Vector2(width, height) } // Doorway size in world units
       },
     });
 
@@ -91,6 +93,14 @@ export class Portal {
     topHeader.position.set(0, h + t / 2, 0);
 
     this.group.add(leftPost, rightPost, topHeader);
+  }
+
+  /**
+   * Advances time-based visual effects (the pulsing energy rim).
+   * @param {number} elapsed - Seconds since start
+   */
+  tick(elapsed) {
+    this.material.uniforms.uTime.value = elapsed;
   }
 
   /**

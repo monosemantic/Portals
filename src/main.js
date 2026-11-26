@@ -1,16 +1,18 @@
 import * as THREE from 'three';
-import { CAMERA, ROOM, MAX_LEVELS, MAX_DT, MAX_PIXEL_RATIO, PORTAL_WALL_OFFSET } from './config.js';
-import { createRoom, clampToRoom } from './world/room.js';
+import { CAMERA, MAX_LEVELS, MAX_DT, MAX_PIXEL_RATIO, DEFAULT_CHAMBER } from './config.js';
+import { createRoom } from './world/room.js';
+import { ChamberManager } from './world/ChamberManager.js';
 import { Portal } from './portal/Portal.js';
 import { PortalRenderer } from './portal/PortalRenderer.js';
 import { Player } from './player/Player.js';
 import { Input } from './player/Input.js';
+import { BirdsEyeView } from './debug/BirdsEyeView.js';
 import { Hud } from './ui/Hud.js';
 
 /**
  * Main application entry point.
- * Wires together the Three.js WebGL renderer, scene, camera, portals, player,
- * input controls, and the recursive portal rendering pipeline.
+ * Wires together the Three.js WebGL renderer, scene, camera, chambers, portals, player,
+ * input controls, the recursive portal rendering pipeline, and the Bird's-Eye debug view.
  */
 
 // 1. WebGL renderer and scene initialization
@@ -31,33 +33,51 @@ const camera = new THREE.PerspectiveCamera(
   CAMERA.far
 );
 
-// Populate the test environment (walls, lights, spinning torus knot prop)
+// Shared room shell (walls, floor, ceiling); chamber content is added by ChamberManager
 const room = createRoom(scene);
 
-// 2. Portal setup and linking
-// Portal A: Cyan border, placed on North wall (Z = -ROOM), facing +Z into the room.
-// Portal B: Orange border, placed on East wall (X = +ROOM), facing -X into the room.
+// 2. Portal pair (Portal A: cyan, Portal B: orange). Each chamber re-places them.
 const portalA = new Portal(0x22ddff);
 const portalB = new Portal(0xff8822);
-
-portalA.place(-3, -ROOM + PORTAL_WALL_OFFSET, 0);
-portalB.place(ROOM - PORTAL_WALL_OFFSET, 4, -Math.PI / 2);
-
-// Establish bidirectional link between Portal A and Portal B
 Portal.link(portalA, portalB);
 
 const portals = [portalA, portalB];
 portals.forEach(portal => scene.add(portal.group));
 
-// 3. Player, input, and recursive portal renderer
-const player = new Player(camera, portals, (pos) => clampToRoom(pos, portals));
+const chambers = new ChamberManager(scene, portals);
+
+// 3. Player, input, renderers, and HUD
+const player = new Player(camera, portals, (pos, prev) => chambers.constrain(pos, prev));
 const input = new Input(renderer.domElement);
 const portalRenderer = new PortalRenderer(renderer, scene, portals);
+const birdsEye = new BirdsEyeView({
+  renderer, scene, portalRenderer, player, portals, ceiling: room.ceiling,
+});
+const hud = new Hud(document.getElementById('hud'));
+
+/**
+ * Loads a chamber, moves the player to its spawn point, and syncs the HUD buttons.
+ */
+function selectChamber(index) {
+  const chamber = chambers.load(index);
+  player.setPose(chamber.spawn);
+  hud.setActiveButton(index);
+}
+
+hud.setButtons(chambers.names, selectChamber);
+
+// Start chamber: ?chamber=1..3 in the URL overrides DEFAULT_CHAMBER (handy for the demo)
+const requested = parseInt(new URLSearchParams(window.location.search).get('chamber'), 10) - 1;
+selectChamber(requested >= 0 && requested < chambers.count ? requested : DEFAULT_CHAMBER);
 
 // Interactive hotkeys for live demonstrations
 input.onPress('KeyO', () => {
   portalRenderer.obliqueEnabled = !portalRenderer.obliqueEnabled;
 });
+
+input.onPress('KeyV', () => birdsEye.toggle());
+
+input.onPress('KeyC', () => selectChamber((chambers.index + 1) % chambers.count));
 
 for (let depth = 1; depth <= MAX_LEVELS; depth++) {
   input.onPress('Digit' + depth, () => {
@@ -74,29 +94,50 @@ window.addEventListener('resize', () => {
 });
 
 // Expose core entities to window for debugging via the browser developer console
-window.game = { THREE, scene, camera, renderer, player, portals, portalRenderer, input };
+window.game = { THREE, scene, camera, renderer, player, portals, portalRenderer, input, chambers, birdsEye };
 
 // 4. Game and render loop
-const hud = new Hud(document.getElementById('hud'));
 const clock = new THREE.Clock();
+let elapsed = 0;
 let fpsTime = 0;
 let fpsFrames = 0;
 let fps = 0;
+
+const onOff = value => (value ? 'ON' : 'OFF');
+
+function updateHud() {
+  hud.set(
+    '<b>Portals POC (Three.js WebGL)</b><br>' +
+    'Chamber <b>' + (chambers.index + 1) + '/' + chambers.count + ': ' + chambers.current.name + '</b> (C)<br>' +
+    'Bird\'s-Eye View <b>' + onOff(birdsEye.enabled) + '</b> (V' + (birdsEye.enabled ? ', Q/E orbit, wheel zoom' : '') + ')<br>' +
+    'Oblique Clipping <b>' + onOff(portalRenderer.obliqueEnabled) + '</b> (O)<br>' +
+    'Recursion Depth <b>' + portalRenderer.maxDepth + '</b> (1-' + MAX_LEVELS + ')<br>' +
+    '<b>' + portalRenderer.passes + '</b> passes/frame | <b>' + fps + '</b> FPS<br>' +
+    'WASD: move | Drag: look'
+  );
+}
 
 function animationFrame() {
   requestAnimationFrame(animationFrame);
 
   // Cap delta time to prevent physics anomalies if the user leaves the tab
   const dt = Math.min(clock.getDelta(), MAX_DT);
+  elapsed += dt;
 
   // Process player movement & portal teleportation
   player.update(dt, input);
+  birdsEye.update(dt, input);
 
-  // Animate scene objects (e.g. rotating torus knot)
-  room.update(dt);
+  // Animate chamber props and portal rims
+  chambers.update(dt);
+  portals.forEach(portal => portal.tick(elapsed));
 
-  // Recursively render all portal views and the final scene
-  portalRenderer.render(camera);
+  // Recursively render all portal views, then the final view (player or overview)
+  if (birdsEye.enabled) {
+    birdsEye.render();
+  } else {
+    portalRenderer.render(camera);
+  }
 
   // Calculate FPS
   fpsFrames++;
@@ -107,14 +148,7 @@ function animationFrame() {
     fpsTime = 0;
   }
 
-  // Update HUD diagnostics
-  hud.set(
-    '<b>Portals POC (Three.js WebGL)</b><br>' +
-    'WASD: move | Drag: look<br>' +
-    'O: Oblique Near-Plane Clipping <b>' + (portalRenderer.obliqueEnabled ? 'ON' : 'OFF') + '</b><br>' +
-    '1-' + MAX_LEVELS + ': Recursion Depth <b>' + portalRenderer.maxDepth + '</b><br>' +
-    portalRenderer.passes + ' scene passes/frame | ' + fps + ' FPS'
-  );
+  updateHud();
 }
 
 // Start the loop

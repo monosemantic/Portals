@@ -14,7 +14,11 @@
  */
 
 export const portalVertexShader = `
+  // Quad UVs (0..1 across the doorway), used only for the animated energy rim
+  varying vec2 vUv;
+
   void main() {
+    vUv = uv;
     // Standard projection: transforms the portal quad vertex from local space
     // to screen clip space.
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -35,24 +39,43 @@ export const portalFragmentShader = `
   // The distinctive color of this portal (e.g., cyan or orange)
   uniform vec3 uTint;
 
+  // Elapsed time in seconds (drives the rim pulse)
+  uniform float uTime;
+
+  // Doorway size in world units, so the rim has the same thickness on every side
+  uniform vec2 uSize;
+
+  varying vec2 vUv;
+
+  // Rim thickness in world units
+  const float RIM_WIDTH = 0.12;
+
+  // Soft glow along the left, right, and top edges (the bottom edge touches the floor).
+  float energyRim() {
+    vec2 fromEdge = min(vUv, 1.0 - vUv) * uSize;  // distance to the nearest edge per axis
+    float sideDist = fromEdge.x;
+    float topDist = (1.0 - vUv.y) * uSize.y;
+    float rim = 1.0 - smoothstep(0.0, RIM_WIDTH, min(sideDist, topDist));
+    float pulse = 0.65 + 0.35 * sin(uTime * 3.0);
+    return rim * pulse;
+  }
+
   void main() {
-    // If we've reached the recursion depth limit, render a subtle dark tint
-    // so the portal looks like a closed gateway rather than an infinite void.
+    vec3 baseColor;
+
     if (uFlat > 0.5) {
-      gl_FragColor = vec4(uTint * 0.2, 1.0);
-      return;
+      // Reached the recursion depth limit: render a subtle dark tint
+      // so the portal looks like a closed gateway rather than an infinite void.
+      baseColor = uTint * 0.2;
+    } else {
+      // Convert fragment pixel coordinates to normalized screen UVs in [0.0, 1.0]
+      vec2 screenUV = gl_FragCoord.xy / uRes;
+
+      // Sample the virtual camera's render target, then add a subtle 6% tint so the
+      // player can tell which doorway they are looking through (blue vs. orange).
+      baseColor = mix(texture2D(map, screenUV).rgb, uTint, 0.06);
     }
 
-    // Convert fragment pixel coordinates to normalized screen UVs in [0.0, 1.0]
-    vec2 screenUV = gl_FragCoord.xy / uRes;
-
-    // Sample the virtual camera's render target
-    vec3 sceneColor = texture2D(map, screenUV).rgb;
-
-    // Add a subtle 6% color tint to help the player visually distinguish
-    // which portal doorway they are looking through (e.g. blue vs. orange).
-    vec3 finalColor = mix(sceneColor, uTint, 0.06);
-
-    gl_FragColor = vec4(finalColor, 1.0);
+    gl_FragColor = vec4(mix(baseColor, uTint, energyRim() * 0.7), 1.0);
   }
 `;

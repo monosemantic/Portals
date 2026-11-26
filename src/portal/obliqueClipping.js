@@ -20,13 +20,18 @@ const clipPlaneWorld = new THREE.Plane();
 const clipPlaneView = new THREE.Vector4();
 const frustumCorner = new THREE.Vector4();
 
+// Below this |C . Q| the oblique scale factor becomes numerically unstable
+const GRAZING_EPSILON = 1e-4;
+
 /**
  * Modifies the camera's projection matrix in-place so its near clipping plane
  * matches the plane of the destination portal.
  *
  * @param {THREE.PerspectiveCamera} camera - The virtual camera to modify (must have updated matrices)
  * @param {Portal} destinationPortal - The portal the virtual camera looks out from
- * @param {number} bias - Small offset to prevent self-clipping of the portal quad
+ * @param {number} bias - World-space distance the clip plane is pushed behind the portal
+ *                        (prevents self-clipping of geometry exactly at the threshold)
+ * @returns {boolean} False if the plane was too close to edge-on and the matrix was left untouched
  */
 export function applyObliqueNearPlane(camera, destinationPortal, bias = OBLIQUE_BIAS) {
   // 1. Define the destination portal's plane in world space (normal pointing out, coplanar with origin)
@@ -34,6 +39,10 @@ export function applyObliqueNearPlane(camera, destinationPortal, bias = OBLIQUE_
     destinationPortal.normal,
     destinationPortal.origin
   );
+
+  // Apply the bias in WORLD space: n.p + (d + bias) = 0 shifts the plane `bias` units
+  // behind the portal. Unlike nudging e[10], this offset is uniform at every depth.
+  clipPlaneWorld.constant += bias;
 
   // 2. Transform the clipping plane into camera view space using matrixWorldInverse
   clipPlaneWorld.applyMatrix4(camera.matrixWorldInverse);
@@ -60,14 +69,18 @@ export function applyObliqueNearPlane(camera, destinationPortal, bias = OBLIQUE_
   frustumCorner.z = -1.0;
   frustumCorner.w = (1.0 + e[10]) / e[14];
 
-  // 4. Scale the clip plane vector so the near plane passes exactly through that corner
+  // 4. Scale the clip plane vector so the near plane passes exactly through that corner.
+  // Grazing-angle guard: when the plane is nearly edge-on to that corner the scale
+  // explodes (division by ~0), so keep the standard projection for this pass instead.
   const dotProduct = clipPlaneView.dot(frustumCorner);
-  const projectionScale = 2.0 / dotProduct;
-  clipPlaneView.multiplyScalar(projectionScale);
+  if (Math.abs(dotProduct) < GRAZING_EPSILON) return false;
+
+  clipPlaneView.multiplyScalar(2.0 / dotProduct);
 
   // 5. Overwrite the 3rd row (Z/depth row: indices 2, 6, 10, 14) of the projection matrix
   e[2] = clipPlaneView.x;
   e[6] = clipPlaneView.y;
-  e[10] = clipPlaneView.z + 1.0 - bias; // Apply slight bias to prevent z-fighting at the threshold
+  e[10] = clipPlaneView.z + 1.0;
   e[14] = clipPlaneView.w;
+  return true;
 }

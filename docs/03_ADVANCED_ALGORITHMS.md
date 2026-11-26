@@ -146,7 +146,7 @@ Our engine uses a **Post-Order Depth-First Search (DFS)** traversal:
    - For every visible portal:
      - Position the virtual camera at the linked exit.
      - Apply oblique clipping.
-     - Call `_renderView(virtualCam, level + 1, renderTarget)`.
+     - Call `_renderView(virtualCam, level + 1, renderTarget, portal.link)` (the exit portal is excluded from the child pass, so a virtual camera never renders a view of itself).
      - Store the resulting texture in a map.
 
 3. **Base Case (`level >= maxDepth`):**

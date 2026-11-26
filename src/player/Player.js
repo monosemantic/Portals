@@ -20,7 +20,7 @@ export class Player {
   /**
    * @param {THREE.PerspectiveCamera} camera - The main rendering camera
    * @param {Array<Portal>} portals - List of scene portals to test for crossings
-   * @param {Function|null} constrainPosition - Boundary collision function (room walls)
+   * @param {Function|null} constrainPosition - Collision function (position, previousPosition) => void
    */
   constructor(camera, portals, constrainPosition = null) {
     this.camera = camera;
@@ -34,7 +34,20 @@ export class Player {
     // Standard FPS rotation order: Yaw around Y first, then Pitch around X.
     // This avoids gimbal lock within normal viewing ranges and keeps the horizon level.
     this.camera.rotation.order = 'YXZ';
-    this.camera.position.set(0, PLAYER.eyeHeight, 6);
+    this.setPose({ x: 0, z: 6, yaw: 0 });
+  }
+
+  /**
+   * Instantly moves the player to a floor position and view direction (e.g. chamber spawn).
+   *
+   * @param {{x: number, z: number, yaw?: number, pitch?: number}} pose
+   */
+  setPose({ x, z, yaw = 0, pitch = 0 }) {
+    this.yaw = yaw;
+    this.pitch = pitch;
+    this.camera.position.set(x, PLAYER.eyeHeight, z);
+    this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.camera.updateMatrixWorld(true);
   }
 
   /**
@@ -75,9 +88,9 @@ export class Player {
     cam.position.x += (forwardX + strafeX) * moveStep;
     cam.position.z += (forwardZ + strafeZ) * moveStep;
 
-    // Apply room boundary wall collision
+    // Apply wall collision (the previous position tells which side of a divider we came from)
     if (this.constrainPosition) {
-      this.constrainPosition(cam.position);
+      this.constrainPosition(cam.position, _previousPosition);
     }
 
     // 3. Apply rotation to the camera before running portal crossing checks.
