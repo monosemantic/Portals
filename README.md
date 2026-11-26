@@ -33,6 +33,11 @@ Then open `http://localhost:8000` in your browser.
 | **C** / HUD buttons | Cycle the 3 showcase **chambers** (Oblique Lab, Infinite Mirror Hallway, Split Glass) |
 | **V** | Toggle the **Bird's-Eye Debug View** (player + virtual camera frustums, first-person inset) |
 | **Q / E**, Mouse Wheel | Orbit / zoom the Bird's-Eye camera (WASD and drag still drive the player) |
+| **R** | Respawn at the current chamber's start position |
+| **L** | Toggle **recursion level colors** (level 1 blue, 2 green, 3 yellow, 4 magenta, 5 red) |
+| **B** | Toggle **see yourself**: your body is visible through portals (never in your own view) |
+| **M** | Toggle the live **projection matrix readout** (row 3, standard vs. oblique) |
+| **H** | Hide / show the HUD |
 | `?chamber=1..3` | URL parameter to start in a specific chamber (e.g. `http://localhost:8000/?chamber=3`) |
 | **F12 / Console** | Inspect `window.game` (scene, portals, player, renderer) |
 
@@ -51,6 +56,7 @@ src/
 │   └── portalShader.js      # Screen-space sampling GLSL vertex & fragment shaders
 ├── player/
 │   ├── Player.js            # First-person camera, kinematics & seamless teleportation
+│   ├── Avatar.js            # Player body (seen through portals and in Bird's-Eye view)
 │   └── Input.js             # Keyboard and mouse pointer event handling
 ├── world/
 │   ├── room.js              # Color-coded room shell, wall & glass-divider collision
@@ -58,7 +64,9 @@ src/
 │   ├── chambers.js          # The 3 showcase chamber presets (data + build functions)
 │   └── ChamberManager.js    # Chamber loading/disposal, portal placement, collision
 ├── debug/
-│   └── BirdsEyeView.js      # Overview camera, frustum helpers & first-person inset
+│   ├── BirdsEyeView.js      # Overview camera, frustum gizmos & first-person inset
+│   ├── FrustumGizmo.js      # Frustum wireframe cut by the oblique clip plane
+│   └── ProjectionReadout.js # Live HUD readout of projection matrix row 3
 └── ui/
     └── Hud.js               # Diagnostic HUD overlay & chamber buttons
 ```
@@ -80,3 +88,6 @@ src/
 
 4. **Continuous Collision Detection (`Portal.crossed`)**
    Tests the line segment between the player's previous and current positions against the portal plane ($Z = 0$). Computes the exact intersection fraction $t$ to prevent tunneling at high speeds.
+
+5. **No Near-Plane Flash When Stepping Through (`Portal.js`, `room.js`)**
+   Within $5\text{ cm}$ of a portal the camera's near plane would clip the portal quad and reveal the wall behind it. The portal surface is therefore a shallow box reaching $15\text{ cm}$ behind the doorway, and the walls have real openings behind every portal. Because the shader samples in screen space, every face of the box shows the same image.

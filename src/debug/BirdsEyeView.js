@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { BIRDS_EYE, CAMERA, PLAYER } from '../config.js';
+import { BIRDS_EYE, CAMERA } from '../config.js';
 import { FrustumGizmo } from './FrustumGizmo.js';
 
 /**
  * Bird's-Eye debug view (toggle with V).
  *
  * Renders the room from an elevated overview camera with the ceiling removed and shows:
- * - A marker for the player's position and facing direction.
+ * - The player's avatar as a position and facing marker.
  * - The player camera frustum (white).
  * - The level-1 virtual camera frustum of every portal the player can currently see,
  *   tinted with that portal's color. With oblique clipping ON, it is cut by the exit
@@ -19,7 +19,7 @@ import { FrustumGizmo } from './FrustumGizmo.js';
  * Pass order per frame:
  * 1. PortalRenderer runs normally (debug objects hidden, so they never leak into
  *    portal textures) and writes the player's final view into the inset target.
- * 2. The player marker and frustum gizmos are synced to this frame's cameras.
+ * 2. The frustum gizmos are synced to this frame's cameras.
  * 3. The scene is drawn from the overview camera to the screen.
  * 4. The inset is composited into the bottom-right corner.
  */
@@ -45,14 +45,16 @@ export class BirdsEyeView {
    * @param {Player} deps.player
    * @param {Array<Portal>} deps.portals
    * @param {THREE.Mesh} deps.ceiling - Hidden during the overview pass
+   * @param {Avatar} deps.avatar - Player body, forced visible during the overview pass
    */
-  constructor({ renderer, scene, portalRenderer, player, portals, ceiling }) {
+  constructor({ renderer, scene, portalRenderer, player, portals, ceiling, avatar }) {
     this.renderer = renderer;
     this.scene = scene;
     this.portalRenderer = portalRenderer;
     this.player = player;
     this.portals = portals;
     this.ceiling = ceiling;
+    this.avatar = avatar;
     this.enabled = false;
 
     this._setupOverviewCamera();
@@ -62,8 +64,6 @@ export class BirdsEyeView {
     this.debugGroup.visible = false;
     scene.add(this.debugGroup);
 
-    this.avatar = createAvatar();
-    this.debugGroup.add(this.avatar);
     this._setupFrustumGizmos();
     this._setupInset();
 
@@ -102,7 +102,6 @@ export class BirdsEyeView {
     this.portalRenderer.render(playerCam, this.insetTarget);
 
     // 2. Sync debug geometry to this frame's cameras
-    this._syncAvatar();
     this._syncFrustumGizmos();
 
     // 3. Overview pass: portals shown as flat tinted panes (their textures are
@@ -112,12 +111,15 @@ export class BirdsEyeView {
       portal.material.uniforms.uFlat.value = 1.0;
     }
     this._syncOverviewAspect();
+    const avatarWasVisible = this.avatar.object.visible;
+    this.avatar.object.visible = true;
     this.ceiling.visible = false;
     this.debugGroup.visible = true;
     renderer.setRenderTarget(null);
     renderer.render(this.scene, this.overviewCamera);
     this.ceiling.visible = true;
     this.debugGroup.visible = false;
+    this.avatar.object.visible = avatarWasVisible;
 
     // 4. First-person inset in the bottom-right corner
     this._renderInset();
@@ -159,14 +161,8 @@ export class BirdsEyeView {
   }
 
   // ---------------------------------------------------------------------------
-  // Player marker and frustum helpers
+  // Frustum gizmos
   // ---------------------------------------------------------------------------
-
-  _syncAvatar() {
-    const position = this.player.camera.position;
-    this.avatar.position.set(position.x, 0, position.z);
-    this.avatar.rotation.y = this.player.yaw;
-  }
 
   _setupFrustumGizmos() {
     this.playerFrustum = new FrustumGizmo(PLAYER_FRUSTUM_COLOR);
@@ -258,28 +254,4 @@ export class BirdsEyeView {
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, screen.x, screen.y);
   }
-}
-
-/**
- * Simple player marker: a body cylinder plus a cone "nose" pointing along -Z (forward).
- */
-function createAvatar() {
-  const avatar = new THREE.Group();
-  const bodyHeight = PLAYER.eyeHeight - 0.2;
-
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(PLAYER.radius, PLAYER.radius, bodyHeight, 20),
-    new THREE.MeshBasicMaterial({ color: 0x3ddc97 })
-  );
-  body.position.y = bodyHeight / 2;
-
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.18, 0.6, 16),
-    new THREE.MeshBasicMaterial({ color: 0xffffff })
-  );
-  nose.rotation.x = -Math.PI / 2; // Cone tip (+Y) now points along -Z
-  nose.position.set(0, PLAYER.eyeHeight, -PLAYER.radius - 0.2);
-
-  avatar.add(body, nose);
-  return avatar;
 }

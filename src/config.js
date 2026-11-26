@@ -75,3 +75,10 @@ export const BIRDS_EYE = {
   frustumFar: 8,           // How far the drawn frustums reach into the visible room
   insetWidth: 0.28,        // First-person inset width as a fraction of the screen width
 };
+
+// Recursion level colors (toggle with L): the view rendered at level N is tinted with
+// colors[N - 1], so nested portal views are easy to tell apart.
+export const LEVEL_TINT = {
+  amount: 0.35,                                                    // Blend strength (0..1)
+  colors: [0x3d7dff, 0x3ddc6a, 0xffd23d, 0xff3dd2, 0xff4d3d],      // Level 1..5: blue, green, yellow, magenta, red
+};

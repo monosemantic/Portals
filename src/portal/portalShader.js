@@ -46,6 +46,9 @@ export const portalFragmentShader = `
   // Doorway size in world units, so the rim has the same thickness on every side
   uniform vec2 uSize;
 
+  // Debug tint of the recursion level shown in this portal (rgb = color, a = strength; 0 = off)
+  uniform vec4 uLevelTint;
+
   varying vec2 vLocal;
 
   // Rim thickness in world units
@@ -74,6 +77,7 @@ export const portalFragmentShader = `
       // Sample the virtual camera's render target, then add a subtle 6% tint so the
       // player can tell which doorway they are looking through (blue vs. orange).
       baseColor = mix(texture2D(map, screenUV).rgb, uTint, 0.06);
+      baseColor = mix(baseColor, uLevelTint.rgb, uLevelTint.a);
     }
 
     gl_FragColor = vec4(mix(baseColor, uTint, energyRim() * 0.7), 1.0);

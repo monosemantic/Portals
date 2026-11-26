@@ -87,7 +87,8 @@ export class Portal {
         uFlat: { value: 0 },                     // 1.0 when recursion depth limit is reached
         uTint: { value: new THREE.Color(color) },// Frame color accent
         uTime: { value: 0 },                     // Seconds elapsed (animated energy rim)
-        uSize: { value: new THREE.Vector2(width, height) } // Doorway size in world units
+        uSize: { value: new THREE.Vector2(width, height) }, // Doorway size in world units
+        uLevelTint: { value: new THREE.Vector4(0, 0, 0, 0) } // Recursion level debug tint (set by PortalRenderer)
       },
     });
 

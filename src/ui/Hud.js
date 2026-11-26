@@ -6,6 +6,7 @@
  * - Active recursion depth
  * - Total scene render passes per frame and frame rate (FPS)
  * - Clickable chamber buttons
+ * - Optional live projection-matrix readout
  *
  * Performance note:
  * Only updates the status block's innerHTML when its contents actually change,
@@ -37,6 +38,13 @@ export class Hud {
     if (htmlString === this._cachedHtml) return;
     this._cachedHtml = htmlString;
     this.status.innerHTML = htmlString;
+  }
+
+  /**
+   * Shows or hides the whole HUD (clean visuals during the demo).
+   */
+  toggle() {
+    this.element.classList.toggle('hud-hidden');
   }
 
   /**

@@ -66,13 +66,14 @@ export const CHAMBERS = [
 
   {
     // Two portals facing each other across the room: recursion depth 1 -> 5
-    // produces an infinite hallway of repeated torus knots and columns.
+    // produces an infinite hallway of repeated torus knots, columns, and players.
+    // The knot sits off the center line so it never hides the player's own reflection.
     name: 'Infinite Mirror Hallway',
     portals: [
       { x: 0, z: NORTH_Z, rotY: FACE_SOUTH },
       { x: 0, z: SOUTH_Z, rotY: FACE_NORTH },
     ],
-    spawn: { x: 1.5, z: 6, yaw: 0.1 },
+    spawn: { x: 0, z: 5, yaw: 0 }, // On the axis: you see your own back through Portal A
     divider: false,
     build(group) {
       addStandardLighting(group);
@@ -81,7 +82,7 @@ export const CHAMBERS = [
         [4.5, -6], [4.5, -2], [4.5, 2], [4.5, 6],
       ]);
       addDecoys(group, this.portals);
-      const knot = addTorusKnot(group, [0, 1.8, 0]);
+      const knot = addTorusKnot(group, [-2.5, 1.8, 0]);
       return dt => spinKnot(knot, dt);
     },
   },
