@@ -138,7 +138,7 @@ const levelLegend = LEVEL_TINT.colors
 
 function updateHud() {
   const lines = [
-    '<b>Portals POC (Three.js WebGL)</b>',
+    '<b>Portal</b>',
     'Chamber <b>' + (chambers.index + 1) + '/' + chambers.count + ': ' + chambers.current.name + '</b> (C, R: respawn)',
     "Bird's-Eye View <b>" + onOff(birdsEye.enabled) + '</b> (V' + (birdsEye.enabled ? ', Q/E orbit, wheel zoom' : '') + ')',
     'Oblique Clipping <b>' + onOff(portalRenderer.obliqueEnabled) + '</b> (O)',
