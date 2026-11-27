@@ -12,9 +12,12 @@ export class Input {
    * @param {HTMLElement} domElement - The canvas element to listen for pointer events on
    */
   constructor(domElement) {
+    this.domElement = domElement;
     this.keys = {};            // Tracks active held keys: keys[code] === true
     this.pressHandlers = {};   // One-shot callback functions registered per key code
     this.dragging = false;     // True while the user is holding down the mouse button on the canvas
+    this.shiftLock = false;    // Toggleable Shift Lock state (free-look without holding mouse button)
+    this.pointerLocked = false; // True when the browser has actively locked the pointer to domElement
 
     // Accumulated mouse movement since the last frame
     this._deltaX = 0;
@@ -24,6 +27,11 @@ export class Input {
     // Keyboard event listeners
     window.addEventListener('keydown', (event) => {
       this.keys[event.code] = true;
+
+      if (!event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey
+        && (event.code === 'ShiftLeft' || event.code === 'ShiftRight')) {
+        this.toggleShiftLock();
+      }
 
       // Trigger one-shot action if registered, ignoring keyboard auto-repeat
       const handler = this.pressHandlers[event.code];
@@ -40,15 +48,36 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys = {};
       this.dragging = false;
+      this.shiftLock = false;
+      this.pointerLocked = false;
       this._deltaX = 0;
       this._deltaY = 0;
+    });
+
+    // Keep state in sync if the user exits pointer lock via Esc or browser UI
+    document.addEventListener('pointerlockchange', () => {
+      this.pointerLocked = document.pointerLockElement === this.domElement;
+      if (!this.pointerLocked) {
+        this.shiftLock = false;
+      }
+      this._deltaX = 0;
+      this._deltaY = 0;
+    });
+
+    document.addEventListener('pointerlockerror', () => {
+      this.pointerLocked = false;
     });
 
     // Pointer and mouse drag event listeners
     domElement.addEventListener('pointerdown', (event) => {
       this.dragging = true;
-      // Pointer capture ensures events continue firing even if the cursor leaves the canvas
-      domElement.setPointerCapture(event.pointerId);
+      if (this.shiftLock && !this.pointerLocked) {
+        this._requestPointerLock();
+      }
+      if (!this.pointerLocked) {
+        // Pointer capture ensures events continue firing even if the cursor leaves the canvas
+        domElement.setPointerCapture(event.pointerId);
+      }
     });
 
     window.addEventListener('pointerup', () => {
@@ -59,11 +88,51 @@ export class Input {
       this.dragging = false;
     });
 
-    window.addEventListener('pointermove', (event) => {
-      if (!this.dragging) return;
-      this._deltaX += event.movementX;
-      this._deltaY += event.movementY;
+    document.addEventListener('pointermove', (event) => {
+      if (!this.dragging && !this.lookLocked) return;
+      this._deltaX += event.movementX || 0;
+      this._deltaY += event.movementY || 0;
     });
+  }
+
+  /**
+   * True whenever mouse-look without holding a mouse button is active
+   * (either browser Pointer Lock or fallback Shift Lock).
+   */
+  get lookLocked() {
+    return this.pointerLocked || this.shiftLock;
+  }
+
+  /**
+   * Toggles Shift Lock on or off, requesting or exiting browser Pointer Lock.
+   * If the browser blocks Pointer Lock on a standalone Shift key, shiftLock stays
+   * enabled as a button-free hover look and upgrades to Pointer Lock on canvas click.
+   */
+  toggleShiftLock() {
+    if (this.lookLocked) {
+      this.shiftLock = false;
+      if (this.pointerLocked && document.exitPointerLock) {
+        document.exitPointerLock();
+      }
+      return;
+    }
+
+    this.shiftLock = true;
+    this._deltaX = 0;
+    this._deltaY = 0;
+    this._requestPointerLock();
+  }
+
+  _requestPointerLock() {
+    if (!this.domElement.requestPointerLock) return;
+    try {
+      const result = this.domElement.requestPointerLock();
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => {});
+      }
+    } catch {
+      // Fall back to button-free hover look when browser rejects Shift activation
+    }
   }
 
   /**

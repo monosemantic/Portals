@@ -27,7 +27,8 @@ Then open `http://localhost:8000` in your browser.
 | Key / Action | Function |
 | :--- | :--- |
 | **W, A, S, D** / Arrows | Move forward, backward, and strafe left/right |
-| **Mouse Click + Drag** | Look around (FPS camera) |
+| **Shift** | Toggle **Shift Lock** (lock mouse to look freely without holding click; `Shift` or `Esc` unlocks) |
+| **Mouse Click + Drag** | Look around (FPS camera, when Shift Lock is off) |
 | **O** | Toggle **Oblique Near-Plane Clipping** (watch the red occluders behind walls!) |
 | **1 – 5** | Change **Portal Recursion Depth** (1 = single view, 5 = deep reflections) |
 | **C** / HUD buttons | Cycle the 3 showcase **chambers** (Oblique Lab, Infinite Mirror Hallway, Split Glass) |

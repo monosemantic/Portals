@@ -145,8 +145,9 @@ function updateHud() {
     'Recursion Depth <b>' + portalRenderer.maxDepth + '</b> (1-' + MAX_LEVELS + ')',
     'Level Colors <b>' + onOff(portalRenderer.levelTint) + '</b> (L)' + (portalRenderer.levelTint ? ' ' + levelLegend : ''),
     'See Yourself <b>' + onOff(portalRenderer.showViewer) + '</b> (B)',
+    'Shift Lock <b>' + onOff(input.lookLocked) + '</b> (Shift)',
     '<b>' + portalRenderer.passes + '</b> passes/frame | <b>' + fps + '</b> FPS',
-    'WASD: move | Drag: look | M: matrix | H: hide HUD',
+    'WASD: move | Shift / Drag: look | M: matrix | H: hide HUD',
   ];
   hud.set(lines.join('<br>') + readout.html(camera));
 }
